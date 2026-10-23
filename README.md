@@ -48,11 +48,11 @@ roster rankings are a common source for it. FantasyPros has no open API, so the 
   league's size, QB count (superflex), and PPR scoring. A roster's value is its best starting lineup plus 20% of its bench.
   Rosters are valued as they stood at the end of the selected week, using today's player values.
 - **FantasyPros order:** open **Roster ranks** and drag teams into the order FantasyPros shows for your league (or use the
-  arrows). That order is used in place of FantasyCalc for every week and is saved in your browser for that league.
-  **Reset to FantasyCalc** clears it.
+  arrows). That order is used in place of FantasyCalc for every week, is saved in your browser for that league, and is
+  included in the page URL so shared links show the same table. **Reset to FantasyCalc** clears it.
 
 In testing on one 12-team league, the FantasyCalc order matched FantasyPros exactly for 9 of 12 teams and was off by at most
-two spots for the rest. Overrides are stored locally and are not included in shared links.
+two spots for the rest.
 
 ### Playoff odds
 
@@ -64,7 +64,11 @@ Playoff seeding is by wins, then total points.
 
 - `?league=<league id>` opens a league directly.
 - `&week=<n>` shows the rankings through week *n* (0 is preseason).
+- `&order=<team ids, best first, joined by ->` is a manual roster order (set by dragging in **Roster ranks**).
+- `&w_wins=`, `&w_overallWins=`, `&w_recent=`, `&w_consistency=`, `&w_points=`, `&w_roster=` override a weight.
 - `?user=<username>` shows that user's current-season leagues.
+
+The address bar updates as you change the week, roster order or weights, so **Copy link** always reproduces what you see.
 
 ## Project layout
 

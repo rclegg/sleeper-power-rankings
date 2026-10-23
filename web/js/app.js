@@ -44,14 +44,37 @@ function syncUrl(params) {
   history.replaceState(null, '', p.size ? `?${p}` : location.pathname);
 }
 
-async function open(leagueId, week) {
+// Everything that shapes the view lives in the URL so a shared link reproduces it:
+// week, manual roster order (team ids, best first) and any weight overrides.
+function updateUrl() {
+  if (!data) return;
+  const p = { league: data.league.league_id };
+  if (through !== data.weeks.length) p.week = through;
+  if (custom) p.order = Object.entries(custom).sort((x, y) => x[1] - y[1]).map(e => e[0]).join('-');
+  for (const [k] of WEIGHT_FIELDS) if (weights[k] != null) p['w_' + k] = weights[k];
+  syncUrl(p);
+}
+
+function parseOrder(s) {
+  const ids = (s || '').split('-').map(Number);
+  const ok = ids.length === data.teams.length && new Set(ids).size === ids.length && data.teams.every(t => ids.includes(t.id));
+  return ok ? Object.fromEntries(ids.map((id, i) => [id, i + 1])) : null;
+}
+
+async function open(leagueId, week, init = {}) {
   setStatus('Loading league…');
   data = await loadLeague(leagueId, state);
   setStatus('Valuing rosters…');
   const fc = await fetch(fantasyCalcUrl(data.league)).then(r => r.json());
   values = valuesBySleeperId(fc);
   const saved = loadSaved();
-  custom = saved && data.teams.every(t => saved[t.id]) ? saved : null;
+  custom = parseOrder(init.order) || (saved && data.teams.every(t => saved[t.id]) ? saved : null);
+  weights = {};
+  for (const [k] of WEIGHT_FIELDS) {
+    const v = init.weights?.[k];
+    weightInputs[k].value = '';
+    if (v != null && v !== '' && +v >= 0) { weights[k] = +v; weightInputs[k].value = +v; weightInputs[k].classList.remove('auto'); }
+  }
   through = week != null && week >= 0 && week <= data.weeks.length ? week : data.weeks.length;
   applyWeekRanks();
   $('title').textContent = `${data.league.name} — ${data.league.season}`;
@@ -59,7 +82,7 @@ async function open(leagueId, week) {
     new Option(i === 0 ? 'Preseason' : `Week ${data.weeks[i - 1].week}`, i, i === through, i === through)));
   $('result').hidden = false;
   setStatus('');
-  syncUrl(through === data.weeks.length ? { league: leagueId } : { league: leagueId, week: through });
+  updateUrl();
   render();
 }
 
@@ -105,7 +128,7 @@ function numberList() {
 }
 function commitOrder() {
   ranks = custom = Object.fromEntries([...$('rankList').children].map((li, i) => [+li.dataset.id, i + 1]));
-  saveRanks(ranks); numberList(); render();
+  saveRanks(ranks); numberList(); render(); updateUrl();
   $('rankHint').textContent = 'Using your order.';
 }
 (() => {
@@ -137,7 +160,7 @@ function commitOrder() {
     commitOrder();
   });
 })();
-$('rankReset').addEventListener('click', () => { custom = null; saveRanks(null); applyWeekRanks(); render(); });
+$('rankReset').addEventListener('click', () => { custom = null; saveRanks(null); applyWeekRanks(); render(); updateUrl(); });
 
 const COLS = [
   ['Team', r => r.name, 'team'], ['Power Rank', r => `#${r.powerRank}`, 'rank'], ['Δ', r => r.change > 0 ? `▲${r.change}` : r.change < 0 ? `▼${-r.change}` : '–', r => r.change > 0 ? 'up' : r.change < 0 ? 'down' : ''],
@@ -164,7 +187,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 
 $('through').addEventListener('change', e => {
   through = +e.target.value; applyWeekRanks(); render();
-  syncUrl(through === data.weeks.length ? { league: data.league.league_id } : { league: data.league.league_id, week: through });
+  updateUrl();
 });
 $('share').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText(location.href); setStatus('Link copied.'); }
@@ -177,7 +200,7 @@ $('weights').replaceChildren(...WEIGHT_FIELDS.map(([k, label]) => {
   i.oninput = () => {
     weights[k] = i.value === '' ? null : +i.value;
     i.classList.toggle('auto', weights[k] == null);
-    if (data) render();
+    if (data) { render(); updateUrl(); }
   };
   weightInputs[k] = i;
   l.append(label, i); return l;
@@ -193,7 +216,7 @@ function showWeights() {
 $('weightReset').addEventListener('click', () => {
   weights = {};
   for (const k in weightInputs) weightInputs[k].value = '';
-  showWeights(); if (data) render();
+  showWeights(); if (data) { render(); updateUrl(); }
 });
 
 $('png').addEventListener('click', () => {
@@ -224,7 +247,10 @@ $('png').addEventListener('click', () => {
 const params = new URLSearchParams(location.search);
 if (params.get('league')) {
   $('q').value = params.get('league');
-  getState().then(s => { state = s; return open(params.get('league'), params.has('week') ? +params.get('week') : null); })
+  getState().then(s => { state = s; return open(params.get('league'), params.has('week') ? +params.get('week') : null, {
+    order: params.get('order'),
+    weights: Object.fromEntries(WEIGHT_FIELDS.map(([k]) => [k, params.get('w_' + k)])),
+  }); })
     .catch(err => setStatus(err.message, true));
 } else if (params.get('user')) {
   $('q').value = params.get('user');
