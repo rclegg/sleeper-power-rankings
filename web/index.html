@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sleeper Power Rankings</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>Sleeper Power Rankings</h1>
+  <form id="form">
+    <label>Sleeper username or league ID
+      <input id="q" required placeholder="username, or a numeric league ID" autocomplete="off">
+    </label>
+    <button>Load</button>
+  </form>
+  <div id="leagues" hidden></div>
+  <p id="status" role="status"></p>
+  <section id="result" hidden>
+    <h2 id="title"></h2>
+    <div class="actions">
+      <label>Through week <select id="through"></select></label>
+      <span><button id="share" type="button">Copy link</button> <button id="png" type="button">Download PNG</button></span>
+    </div>
+    <div class="scroll"><table id="table"></table></div>
+    <details>
+      <summary>Weights</summary>
+      <p class="hint">Blank = automatic (matches the original spreadsheet). Lower rank is better; each rank is multiplied by its weight.</p>
+      <div id="weights"></div>
+    </details>
+    <p class="hint" id="notes"></p>
+  </section>
+</main>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

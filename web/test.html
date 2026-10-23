@@ -1,0 +1,38 @@
+<!doctype html><meta charset="utf-8"><title>engine tests</title>
+<pre id="out"></pre>
+<script type="module">
+import { computeRankings, rankingsWithChange, rankDesc } from './js/engine.js';
+import { playoffOdds } from './js/playoffOdds.js';
+import { rosterValue } from './js/rosterStrength.js';
+const out = []; let fail = 0;
+const eq = (name, a, b) => { const ok = JSON.stringify(a) === JSON.stringify(b); if (!ok) fail++; out.push(`${ok ? 'PASS' : 'FAIL'} ${name}${ok ? '' : ` got ${JSON.stringify(a)} want ${JSON.stringify(b)}`}`); };
+
+eq('rankDesc ties share', rankDesc([5, 9, 5, 1]), [2, 1, 2, 4]);
+
+const teams = [1, 2, 3, 4].map(id => ({ id, name: 'T' + id }));
+const wk = (week, pts) => ({ week, results: Object.fromEntries([[1, 2], [3, 4]].flatMap(([a, b]) =>
+  [[a, pts[a], pts[a] > pts[b] ? 1 : 0], [b, pts[b], pts[b] > pts[a] ? 1 : 0]]).map(([id, points, win]) => [id, { points, win }])) });
+const weeks = [wk(1, { 1: 120, 2: 100, 3: 110, 4: 90 }), wk(2, { 1: 130, 2: 90, 3: 95, 4: 105 })];
+const rr = { 1: 2, 2: 1, 3: 4, 4: 3 };
+
+const rows = computeRankings({ teams, weeks, rosterRank: rr });
+eq('team1 leads (best record, ovw, ppg)', rows[0].id, 1);
+eq('all-play wins team1', rows.find(r => r.id === 1).ovw, 6);
+eq('records', rows.map(r => `${r.id}:${r.wins}`).sort(), ['1:2', '2:0', '3:1', '4:1']);
+const pre = computeRankings({ teams, weeks: [], rosterRank: rr });
+eq('preseason = roster rank order', pre.map(r => r.id), [2, 1, 4, 3]);
+const ch = rankingsWithChange({ teams, weeks, rosterRank: rr });
+eq('change = prev rank - rank', ch.every(r => Number.isInteger(r.change)), true);
+
+const o = playoffOdds({ rows, remaining: [], playoffSpots: 2 });
+eq('final odds are 0/1', Object.values(o).reduce((a, b) => a + b, 0), 2);
+const o2 = playoffOdds({ rows, remaining: [{ week: 3, pairs: [[1, 2], [3, 4]] }], playoffSpots: 2, sims: 4000 });
+eq('odds sum to spots', Math.round(Object.values(o2).reduce((a, b) => a + b, 0) * 100) / 100, 2);
+eq('leader favored', o2[1] > o2[2], true);
+
+const vals = { a: { value: 100, pos: 'QB' }, b: { value: 90, pos: 'RB' }, c: { value: 80, pos: 'RB' }, d: { value: 50, pos: 'WR' } };
+eq('lineup + 20% bench', rosterValue(['a', 'b', 'c', 'd'], vals, ['QB', 'RB', 'FLEX', 'BN']), 100 + 90 + 80 + 50 * 0.2);
+
+out.push(fail ? `${fail} FAILED` : 'ALL PASSED');
+document.getElementById('out').textContent = out.join('\n');
+</script>
