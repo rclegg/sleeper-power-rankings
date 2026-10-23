@@ -25,9 +25,16 @@
     </div>
     <div class="scroll"><table id="table"></table></div>
     <details>
+      <summary>Roster ranks</summary>
+      <p class="hint" id="rankHint"></p>
+      <ol id="rankList"></ol>
+      <p class="hint"><button id="rankReset" type="button">Reset to FantasyCalc</button></p>
+    </details>
+    <details>
       <summary>Weights</summary>
-      <p class="hint">Blank = automatic (matches the original spreadsheet). Lower rank is better; each rank is multiplied by its weight.</p>
-      <div id="weights"></div>
+      <p class="hint">A rank in each category is multiplied by its weight (lower total is better). Gray values are automatic, as in the original spreadsheet, and change with the week; type to override.</p>
+      <div id="weights" class="grid"></div>
+      <p class="hint"><button id="weightReset" type="button">Reset to automatic</button></p>
     </details>
     <p class="hint" id="notes"></p>
   </section>

@@ -91,10 +91,10 @@ export function computeRankings({ teams, weeks, rosterRank, weights }) {
   return rows;
 }
 
-/** Rankings now plus rankings one week earlier, to derive the Δ column. */
-export function rankingsWithChange({ teams, weeks, rosterRank, weights }) {
+/** Rankings now plus rankings one week earlier (with that week's roster ranks), to derive the Δ column. */
+export function rankingsWithChange({ teams, weeks, rosterRank, prevRosterRank, weights }) {
   const current = computeRankings({ teams, weeks, rosterRank, weights });
-  const prev = weeks.length > 0 ? computeRankings({ teams, weeks: weeks.slice(0, -1), rosterRank, weights }) : null;
+  const prev = weeks.length > 0 ? computeRankings({ teams, weeks: weeks.slice(0, -1), rosterRank: prevRosterRank || rosterRank, weights }) : null;
   const prevRank = prev && Object.fromEntries(prev.map(r => [r.id, r.powerRank]));
   for (const r of current) r.change = prevRank ? prevRank[r.id] - r.powerRank : 0;
   return current;

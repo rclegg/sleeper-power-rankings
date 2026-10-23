@@ -43,7 +43,7 @@ export async function loadLeague(leagueId, state) {
         results[a.roster_id] = { points: a.points, win };
         results[b.roster_id] = { points: b.points, win: 1 - win };
       }
-      weeks.push({ week, results, pairs: pairs.map(g => [g[0].roster_id, g[1].roster_id]) });
+      weeks.push({ week, results, players: Object.fromEntries(entries.map(e => [e.roster_id, e.players || []])), pairs: pairs.map(g => [g[0].roster_id, g[1].roster_id]) });
     } else {
       remaining.push({ week, pairs: pairs.map(g => [g[0].roster_id, g[1].roster_id]) });
     }

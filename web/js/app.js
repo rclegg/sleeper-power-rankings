@@ -1,4 +1,4 @@
-import { rankingsWithChange } from './engine.js';
+import { rankingsWithChange, resolveWeights } from './engine.js';
 import { playoffOdds } from './playoffOdds.js';
 import { fantasyCalcUrl, valuesBySleeperId, rosterRanks } from './rosterStrength.js';
 import { getState, getUser, getUserLeagues, loadLeague } from './sleeper.js';
@@ -7,7 +7,11 @@ const $ = id => document.getElementById(id);
 const WEIGHT_FIELDS = [['wins', 'Record'], ['overallWins', 'Overall wins'], ['recent', 'Last 5'],
   ['consistency', 'Consistency'], ['points', 'Points'], ['roster', 'Roster']];
 
-let state, data, ranks, weights = {}, through;
+let state, data, values, custom, fcRanks, ranks, weights = {}, through;
+
+const storeKey = () => `rosterRanks:${data.league.league_id}`;
+const loadSaved = () => { try { return JSON.parse(localStorage.getItem(storeKey())); } catch { return null; } };
+const saveRanks = m => { try { m ? localStorage.setItem(storeKey(), JSON.stringify(m)) : localStorage.removeItem(storeKey()); } catch {} };
 
 const setStatus = (msg, err = false) => { $('status').textContent = msg; $('status').className = err ? 'err' : ''; };
 
@@ -45,8 +49,11 @@ async function open(leagueId, week) {
   data = await loadLeague(leagueId, state);
   setStatus('Valuing rosters…');
   const fc = await fetch(fantasyCalcUrl(data.league)).then(r => r.json());
-  ranks = rosterRanks(data.rosters, valuesBySleeperId(fc), data.league.roster_positions);
+  values = valuesBySleeperId(fc);
+  const saved = loadSaved();
+  custom = saved && data.teams.every(t => saved[t.id]) ? saved : null;
   through = week != null && week >= 0 && week <= data.weeks.length ? week : data.weeks.length;
+  applyWeekRanks();
   $('title').textContent = `${data.league.name} — ${data.league.season}`;
   $('through').replaceChildren(...Array.from({ length: data.weeks.length + 1 }, (_, i) =>
     new Option(i === 0 ? 'Preseason' : `Week ${data.weeks[i - 1].week}`, i, i === through, i === through)));
@@ -56,15 +63,81 @@ async function open(leagueId, week) {
   render();
 }
 
+// Roster ranks for "through week W" value the rosters as they stood in W's matchup data
+// (preseason uses week 1's). Values are today's FantasyCalc values: Sleeper keeps no price history.
+function ranksFor(w) {
+  const snap = data.weeks[Math.max(w, 1) - 1]?.players;
+  const rosters = data.rosters.map(r => ({ roster_id: r.roster_id, players: snap?.[r.roster_id] ?? r.players }));
+  return rosterRanks(rosters, values, data.league.roster_positions);
+}
+function applyWeekRanks() {
+  fcRanks = ranksFor(through);
+  ranks = custom || { ...fcRanks };
+  renderRankInputs();
+}
+
 function currentRows() {
   const weeks = data.weeks.slice(0, through);
-  const rows = rankingsWithChange({ teams: data.teams, weeks, rosterRank: ranks, weights });
+  const rows = rankingsWithChange({ teams: data.teams, weeks, rosterRank: ranks, prevRosterRank: custom || (through > 0 ? ranksFor(through - 1) : null), weights });
   const remaining = [...data.weeks.slice(through), ...data.remaining]
     .filter(w => w.pairs.length);
   const odds = playoffOdds({ rows, remaining, playoffSpots: data.playoffSpots });
   rows.forEach(r => { r.odds = odds[r.id]; });
   return rows;
 }
+
+function renderRankInputs() {
+  $('rankHint').textContent = custom ? 'Using your order.' : 'Prefilled from FantasyCalc values of each roster as of the selected week. Drag teams (or use the arrows) to match FantasyPros or your own order.';
+  const list = $('rankList');
+  const sorted = [...data.teams].sort((x, y) => ranks[x.id] - ranks[y.id]);
+  list.replaceChildren(...sorted.map(t => {
+    const li = document.createElement('li');
+    li.dataset.id = t.id;
+    li.innerHTML = `<span class="num"></span><span class="grip" title="Drag">⠿</span><span class="nm"></span>` +
+      `<button type="button" class="mv" data-d="-1" aria-label="Move up">▲</button><button type="button" class="mv" data-d="1" aria-label="Move down">▼</button>`;
+    li.querySelector('.nm').textContent = t.name;
+    return li;
+  }));
+  numberList();
+}
+function numberList() {
+  [...$('rankList').children].forEach((li, i) => { li.querySelector('.num').textContent = i + 1; });
+}
+function commitOrder() {
+  ranks = custom = Object.fromEntries([...$('rankList').children].map((li, i) => [+li.dataset.id, i + 1]));
+  saveRanks(ranks); numberList(); render();
+  $('rankHint').textContent = 'Using your order.';
+}
+(() => {
+  const list = $('rankList');
+  let drag = null;
+  list.addEventListener('pointerdown', e => {
+    if (!e.target.closest('.grip')) return;
+    drag = e.target.closest('li');
+    drag.classList.add('dragging');
+    list.setPointerCapture(e.pointerId);
+  });
+  list.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const over = [...list.children].find(li => li !== drag && e.clientY >= li.getBoundingClientRect().top && e.clientY <= li.getBoundingClientRect().bottom);
+    if (!over) return;
+    const mid = over.getBoundingClientRect().top + over.offsetHeight / 2;
+    list.insertBefore(drag, e.clientY < mid ? over : over.nextSibling);
+    numberList();
+  });
+  const end = () => { if (!drag) return; drag.classList.remove('dragging'); drag = null; commitOrder(); };
+  list.addEventListener('pointerup', end);
+  list.addEventListener('pointercancel', end);
+  list.addEventListener('click', e => {
+    const b = e.target.closest('.mv'); if (!b) return;
+    const li = b.closest('li'), d = +b.dataset.d;
+    if (d < 0 && li.previousElementSibling) list.insertBefore(li, li.previousElementSibling);
+    else if (d > 0 && li.nextElementSibling) list.insertBefore(li.nextElementSibling, li);
+    else return;
+    commitOrder();
+  });
+})();
+$('rankReset').addEventListener('click', () => { custom = null; saveRanks(null); applyWeekRanks(); render(); });
 
 const COLS = [
   ['Team', r => r.name, 'team'], ['Power Rank', r => `#${r.powerRank}`, 'rank'], ['Δ', r => r.change > 0 ? `▲${r.change}` : r.change < 0 ? `▼${-r.change}` : '–', r => r.change > 0 ? 'up' : r.change < 0 ? 'down' : ''],
@@ -76,6 +149,7 @@ const COLS = [
 let lastRows = [];
 
 function render() {
+  showWeights();
   lastRows = currentRows();
   const thead = `<tr>${COLS.map(c => `<th>${c[0]}</th>`).join('')}</tr>`;
   const body = lastRows.map(r => `<tr>${COLS.map(([, f, cls]) => {
@@ -89,19 +163,38 @@ function render() {
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 $('through').addEventListener('change', e => {
-  through = +e.target.value; render();
+  through = +e.target.value; applyWeekRanks(); render();
   syncUrl(through === data.weeks.length ? { league: data.league.league_id } : { league: data.league.league_id, week: through });
 });
 $('share').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText(location.href); setStatus('Link copied.'); }
   catch { setStatus(location.href); }
 });
+const weightInputs = {};
 $('weights').replaceChildren(...WEIGHT_FIELDS.map(([k, label]) => {
   const l = document.createElement('label'), i = document.createElement('input');
-  i.type = 'number'; i.step = '0.1'; i.min = '0'; i.placeholder = 'auto'; i.style.minWidth = '0';
-  i.oninput = () => { weights[k] = i.value === '' ? null : +i.value; if (data) render(); };
+  i.type = 'number'; i.step = '0.1'; i.min = '0'; i.style.minWidth = '0'; i.className = 'auto';
+  i.oninput = () => {
+    weights[k] = i.value === '' ? null : +i.value;
+    i.classList.toggle('auto', weights[k] == null);
+    if (data) render();
+  };
+  weightInputs[k] = i;
   l.append(label, i); return l;
 }));
+// Show the weight actually in use; untouched fields follow the week (e.g. last-5 switches on at week 8).
+function showWeights() {
+  const eff = resolveWeights(weights, through ?? 0);
+  for (const [k] of WEIGHT_FIELDS) {
+    const i = weightInputs[k];
+    if (weights[k] == null) { i.value = +eff[k].toFixed(2); i.classList.add('auto'); }
+  }
+}
+$('weightReset').addEventListener('click', () => {
+  weights = {};
+  for (const k in weightInputs) weightInputs[k].value = '';
+  showWeights(); if (data) render();
+});
 
 $('png').addEventListener('click', () => {
   const rowH = 34, colW = [220, 90, 60, 80, 80, 80, 70, 110, 100, 70];
