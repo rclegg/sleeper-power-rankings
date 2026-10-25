@@ -93,7 +93,9 @@ Then open http://localhost:8123.
 
 ## Deploy to AWS
 
-Requires the AWS CLI with credentials for an account you control.
+Pushes to `main` that change `web/` or `infra/` deploy automatically (`.github/workflows/deploy.yml`). The workflow comes from [aws-static-site-template](https://github.com/rclegg/aws-static-site-template) and signs in to AWS with GitHub OIDC, so no AWS keys are stored in GitHub. The CloudFront URL appears in the run summary.
+
+To deploy by hand instead, you need the AWS CLI with credentials for an account you control:
 
 ```bash
 ./deploy.sh [stack-name]
