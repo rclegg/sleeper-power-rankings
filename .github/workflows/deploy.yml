@@ -10,9 +10,9 @@ permissions:
 jobs:
   deploy:
     uses: rclegg/aws-static-site-template/.github/workflows/deploy-static-site.yml@main
+    secrets: inherit
     with:
       stack-name: sleeper-power-rankings
-      role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/gha-sleeper-power-rankings
       template: infra/template.yaml
       site-dir: web
       sync-args: --exclude test.html
