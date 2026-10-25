@@ -1,18 +1,24 @@
 name: Deploy
 on:
-  push:
-    branches: [main]
-    paths: [web/**, infra/**, .github/workflows/deploy.yml]
+  push: {branches: [main]}
   workflow_dispatch:
 permissions:
   id-token: write
   contents: read
+concurrency:
+  group: deploy
+  cancel-in-progress: false
 jobs:
   deploy:
-    uses: rclegg/aws-static-site-template/.github/workflows/deploy-static-site.yml@main
-    secrets: inherit
-    with:
-      stack-name: sleeper-power-rankings
-      template: infra/template.yaml
-      site-dir: web
-      sync-args: --exclude test.html
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/gha-sleeper-power-rankings
+          aws-region: us-east-1
+      - name: Sync and invalidate
+        run: |
+          out() { aws cloudformation describe-stacks --stack-name sleeper-power-rankings --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text; }
+          aws s3 sync web "s3://$(out BucketName)" --delete --exclude test.html
+          aws cloudfront create-invalidation --distribution-id "$(out DistributionId)" --paths '/*'

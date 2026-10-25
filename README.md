@@ -79,8 +79,6 @@ The address bar updates as you change the week, roster order or weights, so **Co
   - `js/sleeper.js` — Sleeper API client
   - `js/app.js` — UI
   - `test.html` — engine tests (open it in a browser)
-- `infra/template.yaml` — CloudFormation: private S3 bucket behind CloudFront
-- `deploy.sh` — creates or updates the stack, syncs `web/` to S3, and invalidates the CloudFront cache
 - `serve.py` — local dev server with caching disabled
 
 ## Run locally
@@ -93,12 +91,4 @@ Then open http://localhost:8123.
 
 ## Deploy to AWS
 
-Pushes to `main` that change `web/` or `infra/` deploy automatically (`.github/workflows/deploy.yml`). The workflow comes from [aws-static-site-template](https://github.com/rclegg/aws-static-site-template) and signs in to AWS with GitHub OIDC, so no AWS keys are stored in GitHub. The CloudFront URL appears in the run summary.
-
-To deploy by hand instead, you need the AWS CLI with credentials for an account you control:
-
-```bash
-./deploy.sh [stack-name]
-```
-
-It prints the CloudFront URL when it finishes.
+Pushes to `main` deploy automatically (`.github/workflows/deploy.yml`): it syncs `web/` to the S3 bucket and invalidates CloudFront, signing in to AWS with GitHub OIDC so no AWS keys are stored in GitHub. The hosting stack (private S3 behind CloudFront) lives in the infra repo.
