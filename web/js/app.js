@@ -1,7 +1,11 @@
+// UI controller: loads a league, keeps the view state (week, roster order, weights) in sync with the URL, and renders.
 import { rankingsWithChange, resolveWeights } from './engine.js';
 import { playoffOdds } from './playoffOdds.js';
 import { fantasyCalcUrl, valuesBySleeperId, rosterRanks } from './rosterStrength.js';
 import { getState, getUser, getUserLeagues, loadLeague } from './sleeper.js';
+import { renderTable } from './table.js';
+import { downloadPng } from './exportPng.js';
+import { fillRankList, readRankList, initRankList } from './rankList.js';
 
 const $ = id => document.getElementById(id);
 const WEIGHT_FIELDS = [['wins', 'Record'], ['overallWins', 'Overall wins'], ['recent', 'Last 5'],
@@ -9,6 +13,7 @@ const WEIGHT_FIELDS = [['wins', 'Record'], ['overallWins', 'Overall wins'], ['re
 
 let state, data, values, custom, fcRanks, ranks, weights = {}, through;
 
+// Manual roster order is remembered per league in localStorage.
 const storeKey = () => `rosterRanks:${data.league.league_id}`;
 const loadSaved = () => { try { return JSON.parse(localStorage.getItem(storeKey())); } catch { return null; } };
 const saveRanks = m => { try { m ? localStorage.setItem(storeKey(), JSON.stringify(m)) : localStorage.removeItem(storeKey()); } catch {} };
@@ -111,79 +116,24 @@ function currentRows() {
 
 function renderRankInputs() {
   $('rankHint').textContent = custom ? 'Using your order.' : 'Prefilled from FantasyCalc values of each roster as of the selected week. Drag teams (or use the arrows) to match FantasyPros or your own order.';
-  const list = $('rankList');
-  const sorted = [...data.teams].sort((x, y) => ranks[x.id] - ranks[y.id]);
-  list.replaceChildren(...sorted.map(t => {
-    const li = document.createElement('li');
-    li.dataset.id = t.id;
-    li.innerHTML = `<span class="num"></span><span class="grip" title="Drag">⠿</span><span class="nm"></span>` +
-      `<button type="button" class="mv" data-d="-1" aria-label="Move up">▲</button><button type="button" class="mv" data-d="1" aria-label="Move down">▼</button>`;
-    li.querySelector('.nm').textContent = t.name;
-    return li;
-  }));
-  numberList();
+  fillRankList($('rankList'), data.teams, ranks);
 }
-function numberList() {
-  [...$('rankList').children].forEach((li, i) => { li.querySelector('.num').textContent = i + 1; });
-}
-function commitOrder() {
-  ranks = custom = Object.fromEntries([...$('rankList').children].map((li, i) => [+li.dataset.id, i + 1]));
-  saveRanks(ranks); numberList(); render(); updateUrl();
+initRankList($('rankList'), () => {
+  ranks = custom = readRankList($('rankList'));
+  saveRanks(ranks); render(); updateUrl();
   $('rankHint').textContent = 'Using your order.';
-}
-(() => {
-  const list = $('rankList');
-  let drag = null;
-  list.addEventListener('pointerdown', e => {
-    if (!e.target.closest('.grip')) return;
-    drag = e.target.closest('li');
-    drag.classList.add('dragging');
-    list.setPointerCapture(e.pointerId);
-  });
-  list.addEventListener('pointermove', e => {
-    if (!drag) return;
-    const over = [...list.children].find(li => li !== drag && e.clientY >= li.getBoundingClientRect().top && e.clientY <= li.getBoundingClientRect().bottom);
-    if (!over) return;
-    const mid = over.getBoundingClientRect().top + over.offsetHeight / 2;
-    list.insertBefore(drag, e.clientY < mid ? over : over.nextSibling);
-    numberList();
-  });
-  const end = () => { if (!drag) return; drag.classList.remove('dragging'); drag = null; commitOrder(); };
-  list.addEventListener('pointerup', end);
-  list.addEventListener('pointercancel', end);
-  list.addEventListener('click', e => {
-    const b = e.target.closest('.mv'); if (!b) return;
-    const li = b.closest('li'), d = +b.dataset.d;
-    if (d < 0 && li.previousElementSibling) list.insertBefore(li, li.previousElementSibling);
-    else if (d > 0 && li.nextElementSibling) list.insertBefore(li.nextElementSibling, li);
-    else return;
-    commitOrder();
-  });
-})();
+});
 $('rankReset').addEventListener('click', () => { custom = null; saveRanks(null); applyWeekRanks(); render(); updateUrl(); });
 
-const COLS = [
-  ['Team', r => r.name, 'team'], ['Power Rank', r => `#${r.powerRank}`, 'rank'], ['Δ', r => r.change > 0 ? `▲${r.change}` : r.change < 0 ? `▼${-r.change}` : '–', r => r.change > 0 ? 'up' : r.change < 0 ? 'down' : ''],
-  ['PO Odds', r => `${Math.round(r.odds * 100)}%`], ['Record', r => `${r.wins}-${r.losses}`],
-  ['Overall', r => `${r.ovw}-${r.ovl}`], ['Cons', r => `#${r.rankCons}`],
-  ['PPG', r => `#${r.rankPpg}, ${Math.round(r.ppg)}`], ['ROS Roster', r => `#${r.rankRoster}`],
-  ['Score', r => r.score.toFixed(2), 'score'],
-];
 let lastRows = [];
 
 function render() {
   showWeights();
   lastRows = currentRows();
-  const thead = `<tr>${COLS.map(c => `<th>${c[0]}</th>`).join('')}</tr>`;
-  const body = lastRows.map(r => `<tr>${COLS.map(([, f, cls]) => {
-    const c = typeof cls === 'function' ? cls(r) : cls || '';
-    return `<td class="${c}">${esc(f(r))}</td>`;
-  }).join('')}</tr>`).join('');
-  $('table').innerHTML = `<thead>${thead}</thead><tbody>${body}</tbody>`;
+  renderTable($('table'), lastRows);
   $('notes').textContent = 'Roster strength uses FantasyCalc trade values (best starting lineup plus 20% of bench). ' +
     'Playoff odds are simulated from remaining schedule and scoring history.';
 }
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 $('through').addEventListener('change', e => {
   through = +e.target.value; applyWeekRanks(); render();
@@ -219,30 +169,7 @@ $('weightReset').addEventListener('click', () => {
   showWeights(); if (data) { render(); updateUrl(); }
 });
 
-$('png').addEventListener('click', () => {
-  const rowH = 34, colW = [220, 90, 60, 80, 80, 80, 70, 110, 100, 70];
-  const c = document.createElement('canvas');
-  c.width = colW.reduce((a, b) => a + b, 0); c.height = rowH * (lastRows.length + 2);
-  const g = c.getContext('2d');
-  g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
-  g.font = 'bold 15px system-ui'; g.fillStyle = '#111'; g.textBaseline = 'middle';
-  g.fillText(`${data.league.name} — Power Rankings`, 10, rowH / 2);
-  const draw = (cells, y, head) => {
-    if (head) { g.fillStyle = '#2b2b33'; g.fillRect(0, y, c.width, rowH); }
-    let x = 0;
-    cells.forEach(([t, cls], i) => {
-      g.fillStyle = head ? '#fff' : cls === 'up' ? '#1a9a3c' : cls === 'down' ? '#d12a2a' : '#111';
-      g.font = `${head || i === 1 ? 'bold ' : ''}13px system-ui`;
-      g.textAlign = i === 0 ? 'left' : 'center';
-      g.fillText(t, i === 0 ? x + 10 : x + colW[i] / 2, y + rowH / 2); x += colW[i];
-    });
-    if (!head) { g.fillStyle = '#e2e2e8'; g.fillRect(0, y + rowH - 1, c.width, 1); }
-  };
-  draw(COLS.map(col => [col[0]]), rowH, true);
-  lastRows.forEach((r, i) => draw(COLS.map(([, f, cls]) => [f(r), typeof cls === 'function' ? cls(r) : cls]), rowH * (i + 2), false));
-  const a = document.createElement('a');
-  a.download = 'power-rankings.png'; a.href = c.toDataURL('image/png'); a.click();
-});
+$('png').addEventListener('click', () => downloadPng(data.league.name, lastRows));
 
 const params = new URLSearchParams(location.search);
 if (params.get('league')) {

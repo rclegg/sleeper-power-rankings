@@ -77,7 +77,10 @@ The address bar updates as you change the week, roster order or weights, so **Co
   - `js/playoffOdds.js` — playoff simulation
   - `js/rosterStrength.js` — FantasyCalc valuation and roster ranks
   - `js/sleeper.js` — Sleeper API client
-  - `js/app.js` — UI
+  - `js/app.js` — UI controller: league loading, URL state, weights
+  - `js/table.js` — table columns and rendering
+  - `js/rankList.js` — draggable roster-rank list
+  - `js/exportPng.js` — PNG download
   - `test.html` — engine tests (open it in a browser)
 - `serve.py` — local dev server with caching disabled
 
